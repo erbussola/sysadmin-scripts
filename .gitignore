@@ -1,0 +1,5 @@
+echo "*.log" >> .gitignore
+echo "*.tmp" >> .gitignore
+echo "*.bak" >> .gitignore
+echo ".env" >> .gitignore
+echo "*.swp" >> .gitignore
