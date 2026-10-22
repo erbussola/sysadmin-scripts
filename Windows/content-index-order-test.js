@@ -650,9 +650,7 @@ async function collectMessagesWhileScrolling(format = "markdown") {
       const ao = a.order || [0, 0];
       const bo = b.order || [0, 0];
 
-      // ChatGPT's fallback-turn indexes in this DOM run newest-to-oldest.
-      // Sort turn indexes descending, while preserving order within each turn.
-      return bo[0] - ao[0] || ao[1] - bo[1];
+      return ao[0] - bo[0] || ao[1] - bo[1];
     });
   } finally {
     // Non ripristiniamo lo scroll: così puoi verificare
