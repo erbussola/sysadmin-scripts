@@ -610,31 +610,34 @@ function rememberMessages(collected, messages) {
 
 async function collectMessagesWhileScrolling(format = "markdown") {
   const scroller = findConversationScrollContainer();
-  const collected = new Map();
-
   const readTop = () => scroller.scrollTop;
   const step = Math.max(Math.floor(scroller.clientHeight * 0.6), 400);
+  const maxAttempts = 300;
+  const settleWait = 350;
 
-  let previousTop = readTop();
-  let previousCount = 0;
-  let stalled = 0;
+  // Pass 1: move upward to force ChatGPT to load the whole conversation.
+  // This map is only for detecting newly loaded messages; it is NOT exported.
+  const warmup = new Map();
 
-  rememberMessages(collected, readMessagesFromDom(format));
+  const scanInto = (collected) => {
+    rememberMessages(collected, readMessagesFromDom(format));
+  };
 
-  try {
-    for (let attempt = 0; attempt < 300; attempt += 1) {
-      scroller.scrollBy({ top: -step, behavior: "instant" });
-      await sleep(350);
+  const scrollUntilStalled = async (direction, collected) => {
+    let previousTop = readTop();
+    scanInto(collected);
+    let previousCount = collected.size;
+    let stalled = 0;
 
-      rememberMessages(collected, readMessagesFromDom(format));
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      scroller.scrollBy({ top: direction * step, behavior: "instant" });
+      await sleep(settleWait);
+      scanInto(collected);
 
       const currentTop = readTop();
       const currentCount = collected.size;
 
-      if (
-        currentTop === previousTop &&
-        currentCount === previousCount
-      ) {
+      if (currentTop === previousTop && currentCount === previousCount) {
         stalled += 1;
       } else {
         stalled = 0;
@@ -645,18 +648,28 @@ async function collectMessagesWhileScrolling(format = "markdown") {
       previousTop = currentTop;
       previousCount = currentCount;
     }
+  };
 
-    return Array.from(collected.values()).sort((a, b) => {
-      const ao = a.order || [0, 0];
-      const bo = b.order || [0, 0];
+  await scrollUntilStalled(-1, warmup);
 
-      return ao[0] - bo[0] || ao[1] - bo[1];
-    });
-  } finally {
-    // Non ripristiniamo lo scroll: così puoi verificare
-    // se la raccolta ha raggiunto l'inizio della conversazione.
-  }
+  // Normalize to the top before the export pass. A short wait gives the UI
+  // time to render any older messages triggered by reaching the top.
+  scroller.scrollTo({ top: 0, behavior: "instant" });
+  await sleep(500);
+  scanInto(warmup);
+
+  // Pass 2: start with a fresh map and walk top-to-bottom. Map insertion order
+  // now reflects the DOM's chronological order; fallback-turn numbers are not
+  // used as global message indexes because they are not reliable for sorting.
+  const ordered = new Map();
+  scanInto(ordered);
+  await scrollUntilStalled(1, ordered);
+
+  // Deliberately do not sort by turnOrder: it can group unrelated portions
+  // of the conversation and produce a wrong chronology.
+  return Array.from(ordered.values());
 }
+
 
 
 function getMessageElements() {
